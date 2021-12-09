@@ -43,24 +43,28 @@ def main():
         # header = message_header(betactx['net_id'], [18, 18, 18], message_type(message_type_enum.publish), 0)
         header = message_header(betactx['net_id'], [18, 18, 18], message_type(3), 0)
            
-        json = {"subtype": "send", 
-                "block": {  "type": "state", 
+        json = {"action": "process", 
+            "json_block": "true", 
+            "subtype": "send", 
+            "block": {  "type": "state", 
                         "account": "nano_3u8xzqmu6ymxrozhoerop685kaayxbjayd7p9udneodofixksiu9xx7rhycm", 
-                        "previous": "4ADC0C1D964AEA538B4AA267E0F3DA6C8FFF6AD0AB8458F912229659704F90EC", 
+                        "previous": "ADA4C6FFFFBA73B737263DCA39DACA82E75D3C3F779CB8343FA3CCEF57FE1CC6", 
                         "representative": "nano_3u8xzqmu6ymxrozhoerop685kaayxbjayd7p9udneodofixksiu9xx7rhycm", 
-                        "balance": "99999999999999999999999999999600", 
-                        "link": "9575F3517627D40FCE8F398C494088A8FDC27618BBA658741DE23D90A76FC30D", 
-                        "link_as_account": "nano_37doyfaqebyn3z9aygeeb71ajc9xrbu3jgx8d3t3urjxk4mpzirf4t83xg5z", 
-                        "signature": "914B84023941C94D213CB57460A4369689351D9FB747C0D6BC230870C9B05E084D3EA5C1C94B1C2AC05FFF21CBA74FB929056E6ADBB0494203EFB2DB5FA52404", 
-                        "work": "ee561cc5885d9630"}}
-        #modified parse_from_json to acocunt for new block structure
-        block = block_send.parse_from_json(json)
+                        "balance": "99999999999999999999999999999500", "link": "099A24851E26825DC1B7B1CFF7FB2EF33509429461E4DE5E21CAE15E1B409F89", 
+                        "link_as_account": "nano_14et6k4jwbn4dq1uheghyzxkxwso373barh6ush45kq3drfn39wb4hw417ur", 
+                        "signature": "3C3A3DF324C894B4B824F9A04C938A05CE9662959A1F3FAA69D62176AE28DD85755B5E629D556B82B56D1E9B33A7F795175CA3780016256E407E1727387DCC0F", 
+                        "work": "4fdbc9393b88677e"}}
 
-        msg = msg_publish(header, block) 
+        #modified parse_from_json to acocunt for new block structure
+        block = block_state.parse_from_json(json["block"])      
+        msg = msg_publish(header, block)
+
         #Added print for debug purpose 
         print(msg)   
         s.send(msg.serialise())
-        data = s.recv(5000)
+
+        #The received data is unrelated to the previous socket.send !?
+        data = s.recv(1000)
         print(data)
         hex_resp = binascii.hexlify(data)
         print("\n === Read from socket === \n%s\n" % hex_resp)
