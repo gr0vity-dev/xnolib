@@ -149,12 +149,12 @@ class block_send:
 
     @classmethod
     def parse_from_json(cls, json_obj):
-        assert(json_obj['type'] == 'send')
-        prev = binascii.unhexlify(json_obj['previous'])
-        dest = acctools.account_key(json_obj['destination'])
-        bal = int(json_obj['balance'], 16)
-        sig = binascii.unhexlify(json_obj['signature'])
-        work = binascii.unhexlify(json_obj['work'])
+        assert(json_obj['subtype'] == 'send')
+        prev = binascii.unhexlify(json_obj["block"]['previous'])
+        dest = acctools.account_key(json_obj["block"]['link_as_account'])
+        bal = int(json_obj["block"]['balance'])
+        sig = binascii.unhexlify(json_obj["block"]['signature'])
+        work = binascii.unhexlify(json_obj["block"]['work'])  
         return block_send(prev, dest, bal, sig, work)
 
     @classmethod
@@ -173,7 +173,7 @@ class block_send:
         string += "Prev : %s\n" % hexlify(self.previous)
         string += "Dest : %s\n" % hexlify(self.destination)
         string += "       %s\n" % acctools.to_account_addr(self.destination)
-        string += "Bal  : %f\n" % (self.balance / (10**30))
+        string += "Bal  : %s\n" % str(self.balance)
         string += "Sign : %s\n" % hexlify(self.signature)
         string += "Work : %s\n" % hexlify(self.work)
         string += "Acc  : %s\n      %s\n" % (self.get_account_str())
