@@ -5,9 +5,14 @@ from exceptions import *
 
 def read_socket(socket, numbytes):
     try:
+        print("read_socket")
         data = b''
-        while len(data) < numbytes:
-            data += socket.recv(1)
+        i = 0
+        # return socket.recv(1000)
+        while len(data) < numbytes:           
+            data += socket.recv(numbytes)
+            print("#{} : {}".format(i, len(data)), end="\r")
+            i = i + 1
             if len(data) == 0:
                 raise SocketClosedByPeer('read_socket: data=%s' % data)
         return data

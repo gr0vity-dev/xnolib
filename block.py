@@ -75,6 +75,7 @@ class Block:
         elif block_type[0] == block_type_enum.not_a_block:
             pass
             # print('received block type not a block')
+            
 
         else:
             print('received unknown block type %s' % int.from_bytes(block_type, 'big'))
@@ -145,6 +146,7 @@ class block_send:
         data += self.balance.to_bytes(16, "big")
         data += self.signature
         data += self.work[::-1]
+        print(binascii.hexlify(data))
         return data
 
     @classmethod
@@ -656,6 +658,7 @@ class block_state:
 
         # Block states proof of work is received and sent in big endian
         data += self.work
+        print(binascii.hexlify(data))
         return data
 
     def is_epoch_v2_block(self):
@@ -678,7 +681,7 @@ class block_state:
         link = data[112:144]
         sig = data[144:208]
         # Block states proof of work is received and sent in big endian
-        work = data[208:]
+        work = data[208:]     
         return block_state(account, prev, rep, bal, link, sig, work)
 
     @classmethod
@@ -702,7 +705,8 @@ class block_state:
         string += "Prev : %s\n" % hexlify(self.previous)
         string += "Repr : %s\n" % hexlify(self.representative)
         string += "       %s\n" % acctools.to_account_addr(self.representative)
-        string += "Bal  : %f\n" % (self.balance / (10**30))
+        string += "Bal  : %s\n" % (self.balance / (10**30))
+        string += "raw  : %s\n" % self.balance
         string += "Link : %s\n" % hexlify(self.link)
         string += "Sign : %s\n" % hexlify(self.signature)
         string += "Work : %s\n" % hexlify(self.work)

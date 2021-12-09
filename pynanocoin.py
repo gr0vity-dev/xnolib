@@ -205,6 +205,7 @@ class message_header:
 
     @classmethod
     def parse_header(cls, data):
+        print("parse_header:" ,len(data))
         assert(len(data) == 8)
         if data[0] != ord('R'):
             raise ParseErrorBadMagicNumber()
@@ -236,26 +237,26 @@ class message_header:
             return 32 + 16 + 1
 
         elif self.msg_type == message_type(message_type_enum.keepalive):
-            return 8 * (16 + 2);
+            return 8 * (16 + 2)
 
         elif self.msg_type == message_type(message_type_enum.publish):
             return block_length_by_type(self.block_type())
 
         elif self.msg_type == message_type(message_type_enum.confirm_ack):
-            return confirm_ack_size(self.block_type(), self.count_get());
+            return confirm_ack_size(self.block_type(), self.count_get())
 
         elif self.msg_type == message_type(message_type_enum.confirm_req):
-            return confirm_req_size(self.block_type(), self.count_get());
+            return confirm_req_size(self.block_type(), self.count_get())
 
         elif self.msg_type == message_type(message_type_enum.node_id_handshake):
-            return node_id_handshake_size(self.is_query(), self.is_response());
+            return node_id_handshake_size(self.is_query(), self.is_response())
 
         elif self.msg_type == message_type(message_type_enum.telemetry_ack):
             return self.telemetry_ack_size()
 
         else:
             print('unhandled message type: %s' % self.msg_type)
-            assert(0);
+            assert(0)
 
     def __eq__(self, other):
         if str(self) == str(other):
@@ -1046,9 +1047,11 @@ def get_next_hdr_payload(s):
     if data is None:
         raise CommsError()
     header = message_header.parse_header(data)
+    
 
     # we can determine the size of the payload from the header
     size = header.payload_length_bytes()
+    print("size:",  size)
 
     # read and parse payload
     data = read_socket(s, size)
