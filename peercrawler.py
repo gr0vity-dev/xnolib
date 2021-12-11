@@ -310,6 +310,15 @@ def get_random_peer(ctx, filter_func=None):
         peers = list(filter(filter_func, peers))
     return random.choice(peers)
 
+def get_voting_peers(ctx):
+    ''' This fucntion connects to the peer service and get all the known peers
+        applies the filter function, if given
+        and return a random peer from the filtered set
+    '''
+    hdr, peers = get_peers_from_service(ctx)    
+    peers = list(filter(lambda p: p.score >= 1000 and p.is_voting, peers))
+    return peers
+
 
 def string_to_bytes(string, length):
     data = string.encode("utf-8")

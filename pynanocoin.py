@@ -204,8 +204,7 @@ class message_header:
 
 
     @classmethod
-    def parse_header(cls, data):
-        print("parse_header:" ,len(data))
+    def parse_header(cls, data):        
         assert(len(data) == 8)
         if data[0] != ord('R'):
             raise ParseErrorBadMagicNumber()

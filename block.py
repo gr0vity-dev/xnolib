@@ -146,7 +146,6 @@ class block_send:
         data += self.balance.to_bytes(16, "big")
         data += self.signature
         data += self.work[::-1]
-        print(binascii.hexlify(data))
         return data
 
     @classmethod
@@ -658,7 +657,6 @@ class block_state:
 
         # Block states proof of work is received and sent in big endian
         data += self.work
-        print(binascii.hexlify(data))
         return data
 
     def is_epoch_v2_block(self):
