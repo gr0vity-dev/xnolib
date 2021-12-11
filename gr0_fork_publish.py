@@ -1,3 +1,21 @@
+#!/bin/env python3
+#
+# PREREQUISITE : Access to a nano_node with RPC control_enabled = true
+#
+# >>> How to use this script 
+# python3 gr0_fork_publish.py --source_seed=0000000000000000000000000000000000000000000000000000000000000106 --rpc_url=http://localhost:55000
+#
+# >>>What does the script do ?
+# Create multiple fork chains. (Defined in the dest_seeds_chains variable)
+# Broadcast all blocks (except send blocks from --source_seed) to one voting peer
+# Wait for 30 seconds, then broadcast send blocks from --source_seed to different voting_peers.
+#
+# >>> I want to send to different accounts
+#     By changing the dest_seeds_chains variable, 
+#     You can change the seed for all accounts. 
+#     Or You can add additional layers or chains if needed
+
+
 from pynanocoin import *
 from peercrawler import *
 from msg_handshake import node_handshake_id
@@ -9,67 +27,84 @@ from gr0_tools.nano_rpc import Api
 
 
 
-dest_seeds_chains = {"chainA11" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000A", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000A1", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000A11", "layer" : 3} ],
-                     "chainA12" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000A", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000A1", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000A12", "layer" : 3} ], 
-                     "chainA21" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000A", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000A2", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000A21", "layer" : 3} ] ,
-                     "chainA22" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000A", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000A2", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000A22", "layer" : 3} ], 
-                     "chainB11" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000B", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000B1", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000B11", "layer" : 3} ],
-                     "chainB12" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000B", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000B1", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000B12", "layer" : 3} ], 
-                     "chainB21" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000B", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000B2", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000B21", "layer" : 3} ] ,
-                     "chainB22" : [ {"dest_seed" : "110000000000000000000000000000001200000000000000000000000000000B", "layer" : 1}, 
-                                    {"dest_seed" : "11000000000000000000000000000000120000000000000000000000000000B2", "layer" : 2},                   
-                                    {"dest_seed" : "1100000000000000000000000000000012000000000000000000000000000B22", "layer" : 3} ]  }
+dest_seeds_chains = {"chainA11" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000A", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000A1", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000A11", "layer" : 3} ],
+                     "chainA12" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000A", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000A1", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000A12", "layer" : 3} ], 
+                     "chainA21" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000A", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000A2", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000A21", "layer" : 3} ] ,
+                     "chainA22" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000A", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000A2", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000A22", "layer" : 3} ], 
+                     "chainB11" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000B", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000B1", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000B11", "layer" : 3} ],
+                     "chainB12" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000B", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000B1", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000B12", "layer" : 3} ], 
+                     "chainB21" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000B", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000B2", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000B21", "layer" : 3} ] ,
+                     "chainB22" : [ {"dest_seed" : "110000000000000000000000000000001300000000000000000000000000000B", "layer" : 1}, 
+                                    {"dest_seed" : "11000000000000000000000000000000130000000000000000000000000000B2", "layer" : 2},                   
+                                    {"dest_seed" : "1100000000000000000000000000000013000000000000000000000000000B22", "layer" : 3} ]  }
 
+def add_to_chain_visu(chain_visu_l, text) :    
+    chain_visu_l = chain_visu_l + "\n"
+    return chain_visu_l
+def print_and_reset_chain_visu(chain_visu_l):
+    if chain_visu_l == None :
+        return ""    
+    print(chain_visu_l)
+    return ""
 
-
-def create_fork_blocks(args):   
-   
-    
+def create_fork_blocks(args):  
     fork_blocks = {}
+    chain_visu = ""
     # -------------- 0) START -------------------------
     # Determinate the number of transfers and seeds to be created
     api = Api(args.rpc_url, debug=False, forks=True) #reset api instance for each fork chain. Blocks are saved in memory per instance. 
-    for seed_chain in dest_seeds_chains.values():
-        
+    for seed_chain in dest_seeds_chains.items():
+        #Visualize fork chains. (Empty on first iteration)
+        chain_visu = print_and_reset_chain_visu(chain_visu)
+        current_chain = next(iter(seed_chain))        
         source_seed = args.source_seed 
         layer = 0
-        for seed in seed_chain:                          
-            dest_data = api.get_account_data(seed["dest_seed"], 0)            
+        chain_visu = current_chain + "\n"
+        for seed in seed_chain[1]:                                     
+            dest_data = api.get_account_data(seed["dest_seed"], 0)           
 
             send_block = api.create_send_block_seed(source_seed, 
                                                     0, 
                                                     dest_data["account"], 
                                                     args.amount_raw,
                                                     broadcast = 0)
+            #Add to fork chain visualisation  (send blocks)                                       
+            chain_visu = chain_visu + "from:  '{}' --> {:<10}'{}'".format(send_block["block"]["account"], send_block["subtype"] + ":", send_block["hash"])  + "\n"       
             
+            #Only add send_block once per hash. (different fork chains have the same block hashes for the first layers)
             fork_blocks[send_block["hash"]] = {"block" : send_block, "layer" : layer}
             layer = seed["layer"]
-
+            
             receive_block = api.create_receive_block_seed(dest_data["seed"],
                                                             0,
                                                             args.amount_raw,
                                                             dest_data["account"],
                                                             send_block["hash"],
-                                                            broadcast = 0)   
-                 
+                                                            broadcast = 0)  
+            #Add to fork chain visualisation (receive/open blocks)   
+            chain_visu = chain_visu + "to:    '{}' <-- {:<10}'{}'".format(receive_block["block"]["account"], receive_block["subtype"] + ":", receive_block["hash"])  + "\n"   
+            
+            #Only add open/receive_block once per hash.
             fork_blocks[receive_block["hash"]] = {"block" : receive_block, "layer" : layer}
             source_seed = dest_data["seed"]
-    
 
+    #Visualize last fork chain
+    print_and_reset_chain_visu(chain_visu)
+    
     #prepare list of list of dicts  [ [{block1_layer_0}, {block2_layer_0}] , [{block1_layer_1}, {block2_layer_1},{...}], [...], ... ]
     layer_count = max([ int(d["layer"]) for d in fork_blocks.values() ]) + 1
     fork_layers = [[] for _ in range(layer_count)]
@@ -77,7 +112,7 @@ def create_fork_blocks(args):
     for fork in fork_blocks.values() :
         fork_layers[fork["layer"]].append(fork["block"]["block"])
 
-    print("fork_layers : \n" , fork_layers , "\n")    
+    # print("fork_layers : \n" , fork_layers , "\n")    
     return fork_layers
    
 
@@ -137,20 +172,19 @@ def main():
     # Add a position-based command with its help message.
     parser.add_argument("--source_seed", help="Seed to derive source addresses")
     # parser.add_argument("--source_index", type=int, help="Seed to derive source addresses")  
-    parser.add_argument("--rpc_url" ,help="Default : http://192.168.178.88:55000")
+    parser.add_argument("--rpc_url" ,help="Default : http://localhost:55000")
     parser.add_argument("--amount_raw", type=int ,help="Default : 100. Amount that is passed between accounts")    
 
     # Use the parser to parse the arguments.
     args = parser.parse_args()    
    
-    if args.rpc_url == None : args.rpc_url = "http://192.168.178.88:55000"
+    if args.rpc_url == None : args.rpc_url = "http://localhost:55000"
     if args.source_seed == None : args.source_seed = "0000000000000000000000000000000000000000000000000000000000000106"  
     if args.amount_raw == None : args.amount_raw = 100 
 
     #create forks
     forks = create_fork_blocks(args) 
-    exit
-
+    
     ctx = betactx
     msgtype = message_type_enum.publish
     hdr = message_header(network_id(66), [18, 18, 18], message_type(msgtype), 0)
@@ -163,13 +197,12 @@ def main():
     for peer in voting_peers :
         s = handshake_peer(str(peer.ip), peer.port, ctx)
         if s is not None :
-            sockets.append({"socket" : s, "peer" : str(peer.ip)})
+            sockets.append({"socket" : s, "peer" : str(peer.ip) +":" + str(peer.port)})
 
 
-    # #debug
+    # #DEBUG
     # for socket in sockets :
     #     print(socket)  
-
     
     # #DEBUG : Publish only layer 0 block, which should be visible on the network instanly
     # s = handshake_peer(str(voting_peers[0].ip), voting_peers[0].port, ctx)
@@ -199,38 +232,20 @@ def main():
             msg = msg_publish(hdr, blk) 
 
             if current_layer == 0 :
-                #send blocks to 2 different peers
+                #send layer_0 blocks to 2 different peers
                 s = sockets[next_peer]
                 s["socket"].send(msg.serialise())
                 next_peer = next_peer + 1                
             else :
-                # for s in sockets: 
-                #     #send fork blocks to all voting peers --> result : one chain is confimred immediately
+                ## TESTING : #send fork blocks to all voting peers --> result : one chain is confimred immediately 
+                # for s in sockets:                 #     
                 #     s["socket"].send(msg.serialise())
                 #     print("Hash published: {} for account: {} to peer {}".format(hexlify(blk.hash()), acctools.to_account_addr(blk.account), s["peer"]))
+
+                ## TESTING : #send fork blocks to ONE voting peer only --> result : blocks of deeper layers propagate much more slowly.
                 s = random.choice(sockets)           
-                s["socket"].send(msg.serialise())                
+                s["socket"].send(msg.serialise()) #send                
             print("Hash published: {} for account: {} to peer {}".format(hexlify(blk.hash()), acctools.to_account_addr(blk.account), s["peer"]))
-   
-
-    # for peer in peers :
-    #     print('peer [%s]:%s' % (str(peer.ip), peer.port))
-    # return
-       
-   
-    # with get_connected_socket_endpoint(peeraddr, peerport) as s:
-    #     node_handshake_id.perform_handshake_exchange(ctx, s)
-    #     blk = block_state.parse_from_json(json["block"])
-    #     # blk = read_json_block_from_stdin()
-    #     # only state blocks for now
-    #     assert(isinstance(blk, block_state))
-    #     msgtype = message_type_enum.publish
-    #     hdr = message_header(network_id(66), [18, 18, 18], message_type(msgtype), 0)
-    #     hdr.set_block_type(block_type_enum.state)
-    #     msg = msg_publish(hdr, blk)
-    #     print(msg)
-    #     s.send(msg.serialise())
-
 
 if __name__ == '__main__':
     
