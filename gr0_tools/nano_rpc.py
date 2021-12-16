@@ -218,7 +218,13 @@ class Api:
             "hash" : block_hash,
             "json_block" : "true"
         }
-        return self.post_with_auth(req)   
+        return self.post_with_auth(req) 
+
+    def get_peer_count(self):        
+        req = {
+            "action": "peers"
+        }
+        return len(self.post_with_auth(req)["peers"])
 
     def get_block_hash(self, json_block):        
         req = {

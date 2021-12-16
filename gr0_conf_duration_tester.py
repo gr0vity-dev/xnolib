@@ -52,7 +52,7 @@ def is_new_session():
     if row is None :
         return True
     else :
-        raise ValueError('Your seesion needs to be unique. {} already exists'.format(session_id))
+        raise ValueError('session_id {} already exists'.format(session_id))
 
 def insert_block_command(block_hash,command,delta_command):
     try:
@@ -329,7 +329,8 @@ def publish_blocks(args, blocks):
             inc_block_conf_stats("publish")
             count = count + 1  
         print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps, session_id))  
-        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))         
+        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))  
+    update_block_conf_stats("peer_count", api.get_peer_count())
     #Publish by sending block to all voting peers via script
     if args.rpc_process == False :
         start_time = time.time()
@@ -338,17 +339,17 @@ def publish_blocks(args, blocks):
         hdr = message_header(network_id(66), [18, 18, 18], message_type(msgtype), 0)
         hdr.set_block_type(block_type_enum.state)
 
-        voting_peers = get_voting_peers(ctx)
+        voting_peers = get_voting_peers(ctx)        
         sockets = []
 
         #Handshake with all voting peers
-        for peer in voting_peers :
+        for peer in voting_peers :       
             s = handshake_peer(str(peer.ip), peer.port, ctx)
             if s is not None :
                 sockets.append({"socket" : s, "peer" : str(peer.ip) +":" + str(peer.port)})
         
         update_block_conf_stats("duration_s_peer_handshake", (time.time() - start_time ))
-        
+        update_block_conf_stats("peer_count", len(sockets))
         start_time = time.time()
         count = 0      
         for block in blocks :  
