@@ -28,18 +28,19 @@ cursor = conn.cursor()
 def select_conf_duration_stats(limit, show_session):
     select_session = "t1.session_id," if show_session else ""
     return """SELECT {}
-                     t1.blocks_in_session,t2.accounts_used, 
-                     t1.avg_conf_duration_in_s, 
-                     t1.min_conf_duration_in_s, 
-                     t1.max_conf_duration_in_s,
+                     t1.block_count,
+                     t2.accounts_used, 
+                     t1.avg_conf_t, 
+                     t1.min_conf_t, 
+                     t1.max_conf_t,
                      bcs2.prop_value as broadcast_tps,
                      bcs3.prop_value as peers, 
                      bcs.prop_value as utc_start_time  
               FROM ( SELECT session_id, 
-                            min(CAST(delta_command_tdiff as FLOA))/1000 as min_conf_duration_in_s, 
-                            max(CAST(delta_command_tdiff as FLOA))/1000 as max_conf_duration_in_s, 
-                            avg(delta_command_tdiff)/1000 as avg_conf_duration_in_s, 
-                            count(command) as blocks_in_session, * 
+                            min(CAST(delta_command_tdiff as FLOA))/1000 as min_conf_t, 
+                            max(CAST(delta_command_tdiff as FLOA))/1000 as max_conf_t, 
+                            avg(delta_command_tdiff)/1000 as avg_conf_t, 
+                            count(command) as block_count 
                      FROM block_command bc 
                      WHERE command = 'ws_confirmation' 
                      GROUP BY session_id
