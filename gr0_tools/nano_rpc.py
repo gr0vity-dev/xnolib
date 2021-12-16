@@ -134,6 +134,22 @@ class Api:
             response["success"] = True            
         return response
     
+    def get_ledger(account, count):
+        req_get_ledger = {
+            "action": "ledger",
+            "account": account,
+            "count": str(count)
+            }
+        return self.post_with_auth(req_get_ledger)
+
+    def get_chain(self,frontier, count):
+        req_get_chain = {
+            "action": "chain",
+            "block": frontier,
+            "count": str(count)
+        }
+        return self.post_with_auth(req_get_chain)
+    
     def get_telemetry(self, raw) :
         req_get_telemetry = {
         "action": "telemetry",
@@ -170,12 +186,12 @@ class Api:
 
     def wallet_add(self, wallet, private_key) :
         # response = {"success" : False}
-        req_wallet_add = {
-        "action": "wallet_add",
-        "wallet": wallet,
-        "key": private_key
+        req = {
+            "action": "wallet_add",
+            "wallet": wallet,
+            "key": private_key
         }
-        return self.post_with_auth(req_wallet_add)
+        return self.post_with_auth(req)
         
         # {
         #   "account": "nano_3e3j5tkog48pnny9dmfzj1r16pg8t1e76dz5tmac6iq689wyjfpi00000000"
@@ -183,26 +199,41 @@ class Api:
         
         
     def key_expand(self, private_key):        
-        req_key_expand = {
+        req = {
             "action": "key_expand",
             "key": private_key
         }
-        return self.post_with_auth(req_key_expand)
+        return self.post_with_auth(req)
           
 
     def get_block_count(self):        
-        req_block_count = {
+        req = {
             "action": "block_count"
         }
-        return self.post_with_auth(req_block_count)
-            
+        return self.post_with_auth(req)
+
+    def get_block_info(self, block_hash):        
+        req = {
+            "action": "block_info",
+            "hash" : block_hash,
+            "json_block" : "true"
+        }
+        return self.post_with_auth(req)   
+
+    def get_block_hash(self, json_block):        
+        req = {
+            "action": "block_hash",            
+            "json_block" : "true",
+            "block" : json_block
+        }
+        return self.post_with_auth(req)     
 
     def get_stats(self):        
-        req_stats = {
+        req = {
             "action": "stats",
             "type": "counters"
         }
-        return self.post_with_auth(req_stats)
+        return self.post_with_auth(req)
               
 
     def check_balance(self, account):
@@ -300,7 +331,15 @@ class Api:
 
     def set_account_info_inmemory(self, hash, account,next_hash,balance,rep_account, block_type="unset" ):  
         self.account_info_inmemory[account] = {"frontier" : next_hash, "balance" : balance, "representative" : rep_account  }  
-        
+
+    def publish_block(self, block_create_response) :
+        req_process = {
+            "action": "process",
+            "json_block": "true",
+            "subtype": block_create_response["subtype"],
+            "block": block_create_response["block"],
+        }
+        return self.post_with_auth(req_process)      
            
 
     def create_receive_block_seed(
@@ -357,10 +396,11 @@ class Api:
             balance = str(amount_per_chunk_raw)
             
             if broadcast != 1 and destination_account in self.account_info_inmemory and self.forks == False :
+                subtype = "receive" 
                 previous = self.account_info_inmemory[destination_account]["frontier"]
                 balance = str(int(self.account_info_inmemory[destination_account]["balance"]) + int(amount_per_chunk_raw))
-            else :
-                if self.debug : print("error in create_receive_block [subtype=open]\n source_account : {} \naccount_info response: {}\n{}".format(destination_account,account_info,self.account_info_inmemory ))
+            # else :
+            #     if self.debug : print("error in create_receive_block [subtype=open]\n source_account : {} \naccount_info response: {}\n{}".format(destination_account,account_info,self.account_info_inmemory ))
         else:            
             subtype = "receive"  
             previous = account_info["frontier"]        
@@ -383,7 +423,8 @@ class Api:
         create_block_response["subtype"] = subtype
 
         if broadcast == 1 :
-            return publish_block(create_block_response)
+            self.publish_block(create_block_response)
+            return create_block_response
         
         self.set_account_info_inmemory(create_block_response["hash"], destination_account, create_block_response["hash"],balance,rep_account, create_block_response["subtype"])
         return create_block_response
@@ -481,20 +522,14 @@ class Api:
         create_block_response["subtype"] = "send"
 
         if broadcast == 1 :
-            return publish_block(create_block_response)
+            self.publish_block(create_block_response)
+            return create_block_response
+
         
-        self.set_account_info_inmemory(create_block_response["hash"], destination_account, create_block_response["hash"],amount_per_chunk_raw,current_rep, create_block_response["subtype"])
+        self.set_account_info_inmemory(create_block_response["hash"], source_account_data["account"], create_block_response["hash"],block_balance,current_rep, create_block_response["subtype"])
         return create_block_response
-        
     
-    def publish_block(block_create_response) :
-        req_process = {
-            "action": "process",
-            "json_block": "true",
-            "subtype": "send",
-            "block": block["block"],
-        }
-        return self.publish_block(req_process, broadcast, parallel)
+       
 
     def create_change_block_seed(
         self,
@@ -563,12 +598,10 @@ class Api:
         create_block_response["subtype"] = "change"
 
         if broadcast == 1 :
-            return publish_block(create_block_response)        
+            self.publish_block(create_block_response)  
+            return create_block_response      
         
         return create_block_response       
 
-    
-    def publish_block(self, req_process, broadcast, parallel):        
-        return self.post_with_auth(req_process)   
        
 

@@ -6,3 +6,6 @@ lmdb
 jsonpickle
 mysql-connector-python
 flask
+#gr0_tools
+pandas
+sqlite3

@@ -1,4 +1,4 @@
-/__pycache__
-/fork_analyser.data
+**/__pycache__/
+**/*.db
 *.swp
 try_it.py
