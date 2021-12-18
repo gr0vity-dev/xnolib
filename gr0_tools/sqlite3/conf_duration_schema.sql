@@ -2,6 +2,7 @@
 create table block_command (
     session_id          CHAR(64),
     block_hash          CHAR(64),
+    subtype             CHAR(8),
     command_ts          DATETIME DEFAULT((julianday('now') - 2440587.5)*86400.0),
     command             CHAR(32),
     delta_command_tdiff INTEGER,

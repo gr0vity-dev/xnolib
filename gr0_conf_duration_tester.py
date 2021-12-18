@@ -54,7 +54,7 @@ def is_new_session():
     else :
         raise ValueError('session_id {} already exists'.format(session_id))
 
-def insert_block_command(block_hash,command,delta_command):
+def insert_block_command(block_hash, subtype, command,delta_command):
     try:
         cur = conn.cursor()
         query = """ select command_ts, ((julianday('now') - 2440587.5)*86400.0) 
@@ -70,8 +70,8 @@ def insert_block_command(block_hash,command,delta_command):
             delta_command_tdiff = current_ts - delta_command_ts
         # print(delta_command_tdiff)
 
-        query = "INSERT INTO block_command (session_id, block_hash,command, delta_command_tdiff, delta_command) values (?,?,?,?,?) "
-        res = cur.execute(query, (session_id, block_hash, command,delta_command_tdiff,delta_command ))
+        query = "INSERT INTO block_command (session_id, block_hash, subtype, command, delta_command_tdiff, delta_command) values (?,?,?,?,?,?) "
+        res = cur.execute(query, (session_id, block_hash,subtype, command,delta_command_tdiff,delta_command ))
         # conn.commit()
     except Exception as ex:
         print(str(ex))
@@ -156,15 +156,14 @@ class Ws_client:
     def p_confirmation(self, json_msg):
         self.req_counter["confirmation"] = self.req_counter["confirmation"] + 1
         # print("p_confirmation\n" ,json_msg)    
-        insert_block_command(json_msg["message"]["hash"],'ws_confirmation', 'publish'  )
+        insert_block_command(json_msg["message"]["hash"],json_msg["message"]["block"]["subtype"],'ws_confirmation', 'publish'  )
         inc_block_conf_stats("ws_confirmation")
 
     def p_new_unconfirmed_block(self, json_msg):
         if json_msg["message"]["account"] in self.account_filter :        
-            self.req_counter["new_unconfirmed_block"] = self.req_counter["new_unconfirmed_block"] + 1    
-            # print("p_new_unconfirmed_block\n" ,json_msg) 
+            self.req_counter["new_unconfirmed_block"] = self.req_counter["new_unconfirmed_block"] + 1   
             block_hash = self.api.get_block_hash(json_msg["message"]) 
-            insert_block_command(block_hash["hash"],'ws_new_unconfirmed_block', 'publish'  )  
+            insert_block_command(block_hash["hash"], json_msg["message"]["subtype"],'ws_new_unconfirmed_block', 'publish'  )  
             inc_block_conf_stats("ws_new_unconfirmed_block")
         else :
             self.req_counter["new_unconf_blk_not_in_session"] = self.req_counter["new_unconf_blk_not_in_session"] + 1 
@@ -233,32 +232,34 @@ def create_blocks(args):
         for i in range(args.start_index,args.accs+args.start_index):                                      
             dest_data = api.get_account_data(dest_seed, i)            
             source_data = api.get_account_data(source_seed, i) 
-            inc_block_conf_account_stats(source_data["account"], math.floor(math.log(int(source_data["balance"]), 2)))
-            inc_block_conf_account_stats(dest_data["account"], math.floor(math.log(int(dest_data["balance"]) + args.amount_raw , 2)))
-            
+                      
             
             if j == 1 : #add accounts to websockets                
                 ws.update_ws_accounts([source_data["account"], dest_data["account"]])
 
-
+            inc_block_conf_account_stats(source_data["account"], math.floor(math.log(int(source_data["balance"]), 2)))
             send_block = api.create_send_block_seed(source_seed, 
                                                     i, 
                                                     dest_data["account"], 
                                                     args.amount_raw,
                                                     broadcast = 0)                                                             
-            inc_block_conf_stats("session_blocks_created", 1)                            
+            inc_block_conf_stats("session_blocks_created", 1)
+            block_list.append(send_block)     #send_block["subtype"] is "send" 
+            block_counter = block_counter + 1
+
+            if args.block_type == 2 : # Create receive blocks by default
+                inc_block_conf_account_stats(dest_data["account"], math.floor(math.log(int(dest_data["balance"]) + args.amount_raw , 2)))        
+                receive_block = api.create_receive_block_seed(dest_data["seed"],
+                                                                dest_data["index"],
+                                                                args.amount_raw,
+                                                                dest_data["account"],
+                                                                send_block["hash"],
+                                                                broadcast = 0) 
+                inc_block_conf_stats("session_blocks_created", 1)
+                block_list.append(receive_block)  #receive_block["subtype"] is "open" or "receive"
+                block_counter = block_counter + 1  
+                   
             
-            receive_block = api.create_receive_block_seed(dest_data["seed"],
-                                                            dest_data["index"],
-                                                            args.amount_raw,
-                                                            dest_data["account"],
-                                                            send_block["hash"],
-                                                            broadcast = 0) 
-            inc_block_conf_stats("session_blocks_created", 1)           
-            block_list.append(send_block)     #send_block["subtype"] is "send"                                        
-            block_list.append(receive_block)  #receive_block["subtype"] is "open" or "receive" 
-            
-            block_counter = block_counter + 2
             print("Block counter : " , block_counter , end="\r")           
 
     time_lapsed = time.time() - start_time 
@@ -312,9 +313,8 @@ class msg_publish:
         return str(self.hdr) + "\n" + str(self.block)   
 
 
-def publish_blocks(args, blocks):
-    update_block_conf_stats("tps", args.tps)
-    update_block_conf_stats("session_start_time_utc", datetime.utcnow()) 
+def publish_blocks(args, blocks):    
+    update_block_conf_stats("start_time_utc_publish", datetime.utcnow()) 
 
     #Publish by sending block to all voting peers via script
     if args.rpc_process == True :
@@ -322,13 +322,13 @@ def publish_blocks(args, blocks):
         count = 0     
         for block in blocks :
             if count % args.tps == 0 :
-                print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps, session_id), end="\r")
-                time.sleep(1 - time.monotonic() % 1) 
+                print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps /args.tx_wait, session_id), end="\r")
+                if count > 0 : time.sleep(args.tx_wait - time.monotonic() % 1) 
             api.publish_block(block)
-            insert_block_command(block["hash"],'publish', 'publish' )
+            insert_block_command(block["hash"],block["subtype"],'publish', 'publish' )
             inc_block_conf_stats("publish")
             count = count + 1  
-        print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps, session_id))  
+        print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps/args.tx_wait, session_id))  
         update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))  
     update_block_conf_stats("peer_count", api.get_peer_count())
     #Publish by sending block to all voting peers via script
@@ -354,8 +354,8 @@ def publish_blocks(args, blocks):
         count = 0      
         for block in blocks :  
             if count % args.tps == 0 :
-                print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps, session_id), end="\r")
-                time.sleep(1 - time.monotonic() % 1) 
+                print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps/args.tx_wait, session_id), end="\r")
+                if count > 0 : time.sleep(args.tx_wait - time.monotonic() % 1) 
 
             blk = block_state.parse_from_json(block["block"])
             assert(isinstance(blk, block_state)) 
@@ -366,7 +366,7 @@ def publish_blocks(args, blocks):
                 s["socket"].send(msg.serialise())
                 # print("Hash published: {} | {:<8} for account: {} to peer {}".format(hexlify(blk.hash()),block["subtype"], acctools.to_account_addr(blk.account), s["peer"]))
             # print("Hash published: {} | {:<8} for account: {} to {} peers".format(hexlify(blk.hash()),block["subtype"], acctools.to_account_addr(blk.account), len(sockets)), end="\r")
-            insert_block_command(block["hash"],'publish', 'publish' )
+            insert_block_command(block["hash"],block["subtype"],'publish', 'publish' )
             inc_block_conf_stats("publish")
             
             ## TESTING : #send fork blocks to ONE voting peer only --> result : blocks of deeper layers propagate much more slowly.
@@ -374,8 +374,10 @@ def publish_blocks(args, blocks):
             # s["socket"].send(msg.serialise()) #send                
             # print("Hash published: {} for account: {} to peer {}".format(hexlify(blk.hash()), acctools.to_account_addr(blk.account), s["peer"]))        
             count = count + 1  
-        print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps, session_id))  
-        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))    
+        print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps/args.tx_wait, session_id))  
+        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))
+    
+    update_block_conf_stats("end_time_utc_publish", datetime.utcnow())  
     return
 
 def get_conf_status(args, blocks):
@@ -393,12 +395,12 @@ def get_conf_status(args, blocks):
         unconfirmed_blocks = []
         missing_in_ledger = []
         start_time = time.time()
-        sleep_per_iteration = max( min_sleep_per_iteration , min(max_sleep_per_iteration, unconfirmed_count/ (args.accs*2)))
+        sleep_per_iteration = max( min_sleep_per_iteration , min(max_sleep_per_iteration, unconfirmed_count/ (args.accs* args.block_type)))
         for block in blocks :
             block_info = api.get_block_info(block["hash"])
             try: 
                 if block_info["confirmed"] == "true" :
-                    insert_block_command(block["hash"],'rpc_block_info_confirmed', 'publish' )
+                    insert_block_command(block["hash"],block["subtype"],'rpc_block_info_confirmed', 'publish' )
                     inc_block_conf_stats("rpc_block_info_confirmed")
                 else :
                     unconfirmed_blocks.append(block)
@@ -417,6 +419,7 @@ def get_conf_status(args, blocks):
                 unconfirmed_count,    confirmed_in_iteration,    len(missing_in_ledger),  sleep_per_iteration, ("." * itercount)), end="\r")
         time.sleep(sleep_per_iteration) 
     update_block_conf_stats("conf_duration_after_publish", time.time() - start_time_tot )
+    update_block_conf_stats("end_time_utc_conf_rpc", datetime.utcnow())
     return       
 
 def check_for_late_websocket_messages():    
@@ -485,12 +488,14 @@ def main():
     parser.add_argument("--accs", type=int, help="Default : 1 | Number of accounts used to create send blocks. Your '--source_seed' must hold funds for these accounts")
     parser.add_argument("--tx_per_acc",type=int, help="Default : 2 | Number of blocks created per account")
     parser.add_argument("--tps", type=int, help="Default : 10 | broadcast at '--tps' transactions per second")
+    parser.add_argument("--tx_wait", type=int, help="Default : 1 | Waiting time in seconds between 2 broadcasts.")
     # parser.add_argument("--source_index", type=int, help="Seed to derive source addresses")  
     parser.add_argument("--rpc_url" ,help="Default : http://localhost:55000")
     parser.add_argument("--ws_url" ,help="Default : ws://localhost:57000")
     parser.add_argument("--amount_raw", type=int ,help="Default : 1 | Amount that is passed between accounts")    
     parser.add_argument("--rpc_process", help="Default : true | If true, use nano_node process rpc command to publish blocks. Else python script is used to broadcast to all voting peers ")  
-    parser.add_argument("--session_id", help="Choose a unique session_id . 64 random characters by default")    
+    parser.add_argument("--session_id", help="Choose a unique session_id . 64 random characters by default") 
+    parser.add_argument("--block_type", type=int, choices=[1, 2], help="Default : 2 | 1=only send block, 2=send & receive blocks")       
 
     # Use the parser to parse the arguments.
     args = parser.parse_args()   
@@ -501,11 +506,12 @@ def main():
     if args.start_index == None : args.start_index = 0   
     if args.amount_raw == None : args.amount_raw = 1 
     if args.tps == None : args.tps = 10 
+    if args.tx_wait == None : args.tx_wait = 1 
     if args.accs == None : args.accs = 1 
     if args.tx_per_acc == None : args.tx_per_acc = 2
     if args.rpc_process == None : args.rpc_process = "true"
+    if args.block_type == None : args.block_type = 2
     args.rpc_process = True if args.rpc_process == "true" else False     
-        
     api = Api(args.rpc_url, debug=False, forks=False) #reset api instance for each fork chain. Blocks are saved in memory per instance. 
     
     if args.session_id == None:
@@ -513,13 +519,13 @@ def main():
     else : 
         session_id = args.session_id           
     ws = Ws_client(args.ws_url,args.rpc_url, session_id)
-    print(">>>Sending '{}' blocks from seed '{}'".format(args.accs * args.tx_per_acc * 2, args.source_seed)) 
+    print(">>>Sending '{}' blocks from seed '{}'".format(args.accs * args.tx_per_acc * args.block_type, args.source_seed)) 
     db_is_new = not os.path.exists(db_filename)
     conn = sqlite3.connect(db_filename, check_same_thread=False, isolation_level=None)
     create_db(db_is_new)  
     is_new_session()
-    update_block_conf_stats("estimated_session_block_count", args.tx_per_acc * args.accs * 2 )
-    update_block_conf_stats("tps", args.tps )
+    update_block_conf_stats("estimated_session_block_count", args.tx_per_acc * args.accs * args.block_type )
+    update_block_conf_stats("tps", args.tps /args.tx_wait  )
 
     blocks = create_blocks(args)
 

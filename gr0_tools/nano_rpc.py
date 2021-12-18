@@ -19,10 +19,29 @@ class Api:
     account_info_inmemory = { "nano_address" : {"frontier" : "...", "balance" : "..." , "representative": "..."}}
     
    
-    def __init__(self, url, debug=True, forks = False): 
+    def __init__(self, url, debug=True, forks = False, user = None, pw = None ): 
         self.forks = forks      
         self.debug = debug
         self.RPC_URL = url
+        self.RPC_USER = user
+        self.RPC_PW = pw
+
+    
+    # def post_with_auth(self, content, max_retry=2):
+    #     try :
+    #         url = "https://nanowallet.cc:9951/nanocurrency/rpc"
+    #         headers = {"Content-type": "application/json", "Accept": "text/plain"}
+    #         r = requests.post(url, auth=(user, pw), json=content, headers=headers)
+    #         # print({"request": content["action"]})
+    #         if "error" in r.text:
+    #             if self.debug : print("error in post_with_auth |\n request: \n{}\nresponse:\n{}".format(content, r.text)) 
+    #         return json.loads(r.text)
+    #     except : 
+    #         if self.debug : print("{} Retrys left for post_with_auth : {}".format(max_retry, content["action"]))
+    #         max_retry = max_retry - 1   
+    #         if max_retry >= 0 : 
+    #             time.sleep(0.1)  #100ms
+    #             self.post_with_auth(content,max_retry)
     
     def post_with_auth(self, content, max_retry=2):
         try :
@@ -106,8 +125,8 @@ class Api:
         }
         account_balance = self.post_with_auth(req_account_balance)
         account_data["balance"] = account_balance["balance"]
-        account_data["receivable"] = account_balance["receivable"]
-
+        # account_data["receivable"] = account_balance["receivable"]
+        account_data["pending"] = account_balance["pending"]
         return account_data
 
     def validate_account_number(self, account):

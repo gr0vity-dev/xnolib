@@ -35,7 +35,9 @@ def select_conf_duration_stats(limit, show_session):
                      t1.max_conf_t,
                      bcs2.prop_value as broadcast_tps,
                      bcs3.prop_value as peers, 
-                     bcs.prop_value as utc_start_time  
+                     bcs.prop_value as publish_start_utc,
+                     bcs1.prop_value as publish_end_utc,
+                     bcs4.prop_value as conf_end_utc 
               FROM ( SELECT session_id, 
                             min(CAST(delta_command_tdiff as FLOA))/1000 as min_conf_t, 
                             max(CAST(delta_command_tdiff as FLOA))/1000 as max_conf_t, 
@@ -46,7 +48,9 @@ def select_conf_duration_stats(limit, show_session):
                      GROUP BY session_id
                      ORDER BY command_ts DESC
                      LIMIT {}) as t1 
-              LEFT JOIN block_conf_stats bcs on bcs.session_id = t1.session_id and bcs.prop_key = 'session_start_time_utc'  
+              LEFT JOIN block_conf_stats bcs on bcs.session_id = t1.session_id and bcs.prop_key = 'start_time_utc_publish' 
+              LEFT JOIN block_conf_stats bcs1 on bcs1.session_id = t1.session_id and bcs1.prop_key = 'end_time_utc_publish'
+              LEFT JOIN block_conf_stats bcs4 on bcs4.session_id = t1.session_id and bcs4.prop_key = 'end_time_utc_conf_rpc'   
               LEFT JOIN block_conf_stats bcs2 on bcs2.session_id = t1.session_id and bcs2.prop_key = 'tps' 
               LEFT JOIN block_conf_stats bcs3 on bcs3.session_id = t1.session_id and bcs3.prop_key = 'peer_count'
               LEFT JOIN ( SELECT session_id, 
@@ -54,12 +58,87 @@ def select_conf_duration_stats(limit, show_session):
                           FROM block_conf_account_stats 
                           GROUP BY session_id) as t2 on t2.session_id = t1.session_id;""".format(select_session,limit)
 
+def select_conf_duration_stats_2(limit):
+    
+    return """SELECT substr(t1.session_id,0,10),
+                     t1.block_count,
+                     t1.subtype as block_type,
+                     t2.accounts_used as session_accounts, 
+                     t1.avg_conf_t, 
+                     t1.min_conf_t, 
+                     t1.max_conf_t,
+                     bcs2.prop_value as broadcast_tps,
+                     bcs3.prop_value as peers, 
+                     t1.first_conf,
+                     t1.last_conf,
+                     bcs.prop_value as utc_start_publish,
+                     bcs1.prop_value as utc_end_publish,
+                     bcs4.prop_value as utc_end_confirmations  
+              FROM ( SELECT bc.session_id,
+                            count(command) as block_count ,
+                            min(CAST(delta_command_tdiff as FLOA))/1000 as min_conf_t, 
+                            max(CAST(delta_command_tdiff as FLOA))/1000 as max_conf_t, 
+                            min(DATETIME(command_ts, 'unixepoch')) as first_conf, 
+                            max(DATETIME(command_ts, 'unixepoch')) as last_conf, 
+                            avg(delta_command_tdiff)/1000 as avg_conf_t, 
+                            bc.subtype
+                        FROM block_command bc                                        
+                        WHERE command = 'ws_confirmation' 
+                        GROUP BY bc.session_id, bcs1.prop_value
+                        ORDER BY bc.command_ts DESC
+                     LIMIT {}) as t1 
+              LEFT JOIN block_conf_stats bcs on bcs.session_id = t1.session_id and bcs.prop_key = 'start_time_utc_publish'  
+              LEFT JOIN block_conf_stats bcs1 on bcs1.session_id = t1.session_id and bcs1.prop_key = 'end_time_utc_publish'
+              LEFT JOIN block_conf_stats bcs4 on bcs4.session_id = t1.session_id and bcs4.prop_key = 'end_time_utc_conf_rpc'  
+              LEFT JOIN block_conf_stats bcs2 on bcs2.session_id = t1.session_id and bcs2.prop_key = 'tps' 
+              LEFT JOIN block_conf_stats bcs3 on bcs3.session_id = t1.session_id and bcs3.prop_key = 'peer_count'
+              LEFT JOIN ( SELECT session_id, 
+                                 count(*) as accounts_used 
+                          FROM block_conf_account_stats 
+                          GROUP BY session_id) as t2 on t2.session_id = t1.session_id;""".format(limit)
+                # """
+                # SELECT substr(bc.session_id,0,10) as id,
+                #        count(command) as block_count ,
+                #        min(CAST(delta_command_tdiff as FLOA))/1000 as min_conf_t, 
+                #        max(CAST(delta_command_tdiff as FLOA))/1000 as max_conf_t, 
+                #        avg(delta_command_tdiff)/1000 as avg_conf_t, 
+                #        bcs1.prop_value as subtype
+                # FROM block_command bc
+                # LEFT JOIN block_conf_stats bcs1 on bcs1.prop_key = bc.block_hash 
+                # WHERE command = 'ws_confirmation' 
+                # GROUP BY bc.session_id, bcs1.prop_value
+                # ORDER BY command_ts DESC
+                # """ 
+
+
 
 def select_block_command_all(session_id):
     return """SELECT substr(block_hash,0,32) as hash_part_1 ,substr(block_hash,32,33) as hash_part_2, delta_command AS 'from', delta_command_tdiff AS duration_in_ms, command AS till 
               FROM block_command 
               WHERE session_id LIKE '{}%' 
               ORDER BY block_hash, command_ts;""".format(session_id)
+
+def select_block_command_outliner(session_id):
+    return """SELECT substr(b1.block_hash,0,32) as hash_part_1 ,substr(b1.block_hash,32,33) as hash_part_2,
+                     b1.subtype,
+                     b1.delta_command AS 'from',
+                     b1.delta_command_tdiff AS duration_in_ms, 
+                     b1.command AS till , 
+                     DATETIME(ROUND(b2.command_ts ), 'unixepoch') as published,
+                     DATETIME(ROUND(b1.command_ts ), 'unixepoch') as confirmed
+              FROM block_command b1
+              LEFT JOIN block_command b2 on b2.block_hash = b1.block_hash and b2.command = 'publish'             
+              WHERE b1.session_id LIKE '{}%' AND b1.command = 'ws_confirmation' 
+              AND CAST(b1.delta_command_tdiff as FLOA) > 15000
+              ORDER BY b1.delta_command_tdiff DESC;""".format(session_id)
+
+def select_block_command_outliner_bysubtype(session_id, duration):
+    return """SELECT 
+              subtype, count(*), avg(delta_command_tdiff)/1000 as conf_avg_s, min(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_min_s, max(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_max_s
+        FROM block_command b1        
+        WHERE b1.session_id LIKE '{}%' AND b1.command = 'ws_confirmation' 
+        AND CAST(b1.delta_command_tdiff as FLOA) > {}
+        group BY subtype;""".format(session_id,duration)
 
 def block_conf_account_stats_all(session_id):
     return """SELECT *
@@ -114,12 +193,14 @@ def main():
     if args.session_id != None : args.session_id = args.session_id.replace("...","") 
     args.get_id = True if args.get_id == None or args.get_id == "true" else False
    
+    
 
-    if args.session_id == None and args.limit != None:
+    if args.session_id == None and args.limit != None and args.show == None:
         q = select_conf_duration_stats(args.limit,args.get_id)
         print_rows(q, "Block confirmation Stats Overview")
         return
     
+   
     
     if args.show == "1":
         q = select_block_command_all(args.session_id)
@@ -130,7 +211,6 @@ def main():
         q = block_conf_account_stats_all(args.session_id)
         print_rows(q, "Account Stats for session {}".format(args.session_id))
         return
-        
     
     
     if args.show == "3":
@@ -142,12 +222,32 @@ def main():
         print_rows(q1, "Conf Stats for session '{}'".format(args.session_id))    
         # print_rows(q2, "Conf Times")
         # print_rows(q3, "\r")
+        return
+    
     
     if args.show == "4":
-        print_rows("select substr(block_hash,0,32) as hash_part_1 ,substr(block_hash,32,33) as hash_part_2 ,count(*) as commands from block_command where session_id = '{}' group by block_hash having count(*) < 3 ;".format(args.session_id),
-                   "Unconfirmed blocks for session {}".format(args.session_id)
+        print_rows("""select substr(block_hash,0,32) as hash_part_1 ,
+                             substr(block_hash,32,33) as hash_part_2 ,
+                             count(*) as commands 
+                             from block_command where session_id LIKE '{}%' group by block_hash having count(*) <> 4 ;""".format(args.session_id), "Unconfirmed blocks for session {}".format(args.session_id)
                     )
         return
+    
+
+    if args.show == "5":
+        q = select_block_command_outliner(args.session_id)
+        q2 = select_block_command_outliner_bysubtype(args.session_id,15000)
+        q3 = select_block_command_outliner_bysubtype(args.session_id,1)
+        print_rows(q, "Block commands Outliners for session {}".format(args.session_id))
+        print_rows(q2, "Outliners by subtype")
+        print_rows(q3, "All confirmations by subtype")
+        return
+    
+    if args.show=="6":
+        q = select_conf_duration_stats_2(args.limit or 4)
+        print_rows(q, "Block confirmation Stats Overview")
+        return
+    
     
 if __name__ == '__main__':
     main()
