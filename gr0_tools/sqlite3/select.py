@@ -133,12 +133,21 @@ def select_block_command_outliner(session_id):
               ORDER BY b1.delta_command_tdiff DESC;""".format(session_id)
 
 def select_block_command_outliner_bysubtype(session_id, duration):
+    if session_id == "all":
+        return """SELECT 
+              substr(session_id,0,10) || "..." as session_id, subtype, count(*), avg(delta_command_tdiff)/1000 as conf_avg_s, min(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_min_s, max(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_max_s
+        FROM block_command b1        
+        WHERE b1.command = 'ws_confirmation' 
+        AND CAST(b1.delta_command_tdiff as FLOA) > {}
+        group BY session_id,subtype;""".format(duration)
+
     return """SELECT 
               subtype, count(*), avg(delta_command_tdiff)/1000 as conf_avg_s, min(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_min_s, max(CAST(b1.delta_command_tdiff as FLOA))/1000 as conf_max_s
         FROM block_command b1        
         WHERE b1.session_id LIKE '{}%' AND b1.command = 'ws_confirmation' 
         AND CAST(b1.delta_command_tdiff as FLOA) > {}
         group BY subtype;""".format(session_id,duration)
+
 
 def block_conf_account_stats_all(session_id):
     return """SELECT *
@@ -242,11 +251,7 @@ def main():
         print_rows(q2, "Outliners by subtype")
         print_rows(q3, "All confirmations by subtype")
         return
-    
-    if args.show=="6":
-        q = select_conf_duration_stats_2(args.limit or 4)
-        print_rows(q, "Block confirmation Stats Overview")
-        return
+       
     
     
 if __name__ == '__main__':

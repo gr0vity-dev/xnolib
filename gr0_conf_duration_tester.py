@@ -178,6 +178,12 @@ class Ws_client:
 
     def on_close(self, ws):         
         print("### websocket connection closed ###")
+    
+    def calc_network_load(self, session_duration_s):
+        #calculate network load . Exclude the own blocks
+        blocks_per_minute = self.req_counter["new_unconf_blk_not_in_session"] / session_duration_s * 60
+        update_block_conf_stats("avg_new_blocks_per_minute", blocks_per_minute) #This shows how many blocks have been published on average by other users while a session was running.
+
 
     def terminate(self) : 
         print("websocket thread terminating...")  
@@ -532,7 +538,8 @@ def main():
     start_time = time.time()
     publish_blocks(args, blocks)
     get_conf_status(args, blocks)
-    update_block_conf_stats("pub_and_conf_duration_total", time.time() - start_time)  
+    update_block_conf_stats("pub_and_conf_duration_total", time.time() - start_time)
+    ws.calc_network_load(time.time() - start_time)  
     check_for_late_websocket_messages()     
     
     ws.terminate()
