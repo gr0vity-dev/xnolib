@@ -33,6 +33,7 @@ import os
 import threading
 import math
 from datetime import datetime
+import asyncio
 
 db_filename = './gr0_tools/sqlite3/conf_duration.db'
 schema_filename = './gr0_tools/sqlite3/conf_duration_schema.sql'
@@ -40,6 +41,14 @@ conn = None
 session_id = None
 ws = None
 api = None
+_loop = None
+
+def fire_and_forget(coro):
+    global _loop
+    if _loop is None:
+        _loop = asyncio.new_event_loop()
+        threading.Thread(target=_loop.run_forever, daemon=True).start()
+    _loop.call_soon_threadsafe(asyncio.create_task, coro)    
 
 
 def is_new_session():
@@ -54,7 +63,7 @@ def is_new_session():
     else :
         raise ValueError('session_id {} already exists'.format(session_id))
 
-def insert_block_command(block_hash, subtype, command,delta_command):
+async def insert_block_command(block_hash, subtype, command,delta_command):
     try:
         cur = conn.cursor()
         query = """ select command_ts, ((julianday('now') - 2440587.5)*86400.0) 
@@ -76,19 +85,19 @@ def insert_block_command(block_hash, subtype, command,delta_command):
     except Exception as ex:
         print(str(ex))
 
-def update_block_conf_stats(prop_key,prop_value):
+async def update_block_conf_stats(prop_key,prop_value):
     query = """INSERT INTO block_conf_stats (session_id, prop_key, prop_value) VALUES( ?, ? ,?)
                 ON CONFLICT(session_id,prop_key) DO UPDATE SET prop_value= ?"""
     conn.cursor().execute(query, (session_id, prop_key, prop_value, prop_value))
     # conn.commit()
 
-def inc_block_conf_stats(prop_key, inc = 1):
+async def inc_block_conf_stats(prop_key, inc = 1):
     query = """INSERT INTO block_conf_stats (session_id, prop_key, prop_value) VALUES( ?, ? ,?)
                 ON CONFLICT(session_id,prop_key) DO UPDATE SET prop_value = prop_value + ?"""
     conn.cursor().execute(query, (session_id, prop_key, inc, inc))
     # conn.commit()
 
-def inc_block_conf_account_stats(account, bucket_last_tx, inc = 1):
+async def inc_block_conf_account_stats(account, bucket_last_tx, inc = 1):
     query = """INSERT INTO block_conf_account_stats (session_id, account, bucket_last_tx, tx_count) VALUES( ?, ? ,?, ?)
                 ON CONFLICT(session_id,account) DO UPDATE SET bucket_last_tx = ? , tx_count = tx_count + ?"""
     conn.cursor().execute(query, (session_id, account,bucket_last_tx, inc, bucket_last_tx, inc))
@@ -156,18 +165,18 @@ class Ws_client:
     def p_confirmation(self, json_msg):
         self.req_counter["confirmation"] = self.req_counter["confirmation"] + 1
         # print("p_confirmation\n" ,json_msg)    
-        insert_block_command(json_msg["message"]["hash"],json_msg["message"]["block"]["subtype"],'ws_confirmation', 'publish'  )
-        inc_block_conf_stats("ws_confirmation")
+        fire_and_forget(insert_block_command(json_msg["message"]["hash"],json_msg["message"]["block"]["subtype"],'ws_confirmation', 'publish'  ))
+        fire_and_forget(inc_block_conf_stats("ws_confirmation"))
 
     def p_new_unconfirmed_block(self, json_msg):
         if json_msg["message"]["account"] in self.account_filter :        
             self.req_counter["new_unconfirmed_block"] = self.req_counter["new_unconfirmed_block"] + 1   
             block_hash = self.api.get_block_hash(json_msg["message"]) 
-            insert_block_command(block_hash["hash"], json_msg["message"]["subtype"],'ws_new_unconfirmed_block', 'publish'  )  
-            inc_block_conf_stats("ws_new_unconfirmed_block")
+            fire_and_forget(insert_block_command(block_hash["hash"], json_msg["message"]["subtype"],'ws_new_unconfirmed_block', 'publish'  )  )
+            fire_and_forget(inc_block_conf_stats("ws_new_unconfirmed_block"))
         else :
             self.req_counter["new_unconf_blk_not_in_session"] = self.req_counter["new_unconf_blk_not_in_session"] + 1 
-            inc_block_conf_stats("ws_new_unconf_blk_not_in_session")  
+            fire_and_forget(inc_block_conf_stats("ws_new_unconf_blk_not_in_session")  )
 
     def on_message(self, ws, message):
         self.req_counter["message"] = self.req_counter["message"] + 1    
@@ -182,7 +191,7 @@ class Ws_client:
     def calc_network_load(self, session_duration_s):
         #calculate network load . Exclude the own blocks
         blocks_per_minute = self.req_counter["new_unconf_blk_not_in_session"] / session_duration_s * 60
-        update_block_conf_stats("avg_new_blocks_per_minute", blocks_per_minute) #This shows how many blocks have been published on average by other users while a session was running.
+        fire_and_forget(update_block_conf_stats("avg_new_blocks_per_minute", blocks_per_minute)) #This shows how many blocks have been published on average by other users while a session was running.
 
 
     def terminate(self) : 
@@ -243,25 +252,25 @@ def create_blocks(args):
             if j == 1 : #add accounts to websockets                
                 ws.update_ws_accounts([source_data["account"], dest_data["account"]])
 
-            inc_block_conf_account_stats(source_data["account"], math.floor(math.log(int(source_data["balance"]), 2)))
+            fire_and_forget(inc_block_conf_account_stats(source_data["account"], math.floor(math.log(int(source_data["balance"]), 2))))
             send_block = api.create_send_block_seed(source_seed, 
                                                     i, 
                                                     dest_data["account"], 
                                                     args.amount_raw,
                                                     broadcast = 0)                                                             
-            inc_block_conf_stats("session_blocks_created", 1)
+            fire_and_forget(inc_block_conf_stats("session_blocks_created", 1))
             block_list.append(send_block)     #send_block["subtype"] is "send" 
             block_counter = block_counter + 1
 
             if args.block_type == 2 : # Create receive blocks by default
-                inc_block_conf_account_stats(dest_data["account"], math.floor(math.log(int(dest_data["balance"]) + args.amount_raw , 2)))        
+                fire_and_forget(inc_block_conf_account_stats(dest_data["account"], math.floor(math.log(int(dest_data["balance"]) + args.amount_raw , 2)))        )
                 receive_block = api.create_receive_block_seed(dest_data["seed"],
                                                                 dest_data["index"],
                                                                 args.amount_raw,
                                                                 dest_data["account"],
                                                                 send_block["hash"],
                                                                 broadcast = 0) 
-                inc_block_conf_stats("session_blocks_created", 1)
+                fire_and_forget(inc_block_conf_stats("session_blocks_created", 1))
                 block_list.append(receive_block)  #receive_block["subtype"] is "open" or "receive"
                 block_counter = block_counter + 1  
                    
@@ -270,7 +279,7 @@ def create_blocks(args):
 
     time_lapsed = time.time() - start_time 
     # update_block_conf_stats("tps", (block_counter/time_lapsed) ) if args.rpc_process else update_block_conf_stats("tps", args.tps  )
-    update_block_conf_stats("duration_s_create_blocks", time_lapsed)  
+    fire_and_forget(update_block_conf_stats("duration_s_create_blocks", time_lapsed)  )
     return block_list
    
 
@@ -320,7 +329,7 @@ class msg_publish:
 
 
 def publish_blocks(args, blocks):    
-    update_block_conf_stats("start_time_utc_publish", datetime.utcnow()) 
+    fire_and_forget(update_block_conf_stats("start_time_utc_publish", datetime.utcnow()) )
 
     #Publish by sending block to all voting peers via script
     if args.rpc_process == True :
@@ -331,12 +340,12 @@ def publish_blocks(args, blocks):
                 print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps /args.tx_wait, session_id), end="\r")
                 if count > 0 : time.sleep(args.tx_wait - time.monotonic() % 1) 
             api.publish_block(block)
-            insert_block_command(block["hash"],block["subtype"],'publish', 'publish' )
-            inc_block_conf_stats("publish")
+            fire_and_forget(insert_block_command(block["hash"],block["subtype"],'publish', 'publish' ))
+            fire_and_forget(inc_block_conf_stats("publish"))
             count = count + 1  
         print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps/args.tx_wait, session_id))  
-        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))  
-    update_block_conf_stats("peer_count", api.get_peer_count())
+        fire_and_forget(update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))  )
+    fire_and_forget(update_block_conf_stats("peer_count", api.get_peer_count()))
     #Publish by sending block to all voting peers via script
     if args.rpc_process == False :
         start_time = time.time()
@@ -354,8 +363,8 @@ def publish_blocks(args, blocks):
             if s is not None :
                 sockets.append({"socket" : s, "peer" : str(peer.ip) +":" + str(peer.port)})
         
-        update_block_conf_stats("duration_s_peer_handshake", (time.time() - start_time ))
-        update_block_conf_stats("peer_count", len(sockets))
+        fire_and_forget(update_block_conf_stats("duration_s_peer_handshake", (time.time() - start_time )))
+        fire_and_forget(update_block_conf_stats("peer_count", len(sockets)))
         start_time = time.time()
         count = 0      
         for block in blocks :  
@@ -372,8 +381,8 @@ def publish_blocks(args, blocks):
                 s["socket"].send(msg.serialise())
                 # print("Hash published: {} | {:<8} for account: {} to peer {}".format(hexlify(blk.hash()),block["subtype"], acctools.to_account_addr(blk.account), s["peer"]))
             # print("Hash published: {} | {:<8} for account: {} to {} peers".format(hexlify(blk.hash()),block["subtype"], acctools.to_account_addr(blk.account), len(sockets)), end="\r")
-            insert_block_command(block["hash"],block["subtype"],'publish', 'publish' )
-            inc_block_conf_stats("publish")
+            fire_and_forget(insert_block_command(block["hash"],block["subtype"],'publish', 'publish' ))
+            fire_and_forget(inc_block_conf_stats("publish"))
             
             ## TESTING : #send fork blocks to ONE voting peer only --> result : blocks of deeper layers propagate much more slowly.
             # s = random.choice(sockets)           
@@ -381,12 +390,12 @@ def publish_blocks(args, blocks):
             # print("Hash published: {} for account: {} to peer {}".format(hexlify(blk.hash()), acctools.to_account_addr(blk.account), s["peer"]))        
             count = count + 1  
         print("Broadcasted '{}' blocks @ '{}' bps for session '{}'".format(count, args.tps/args.tx_wait, session_id))  
-        update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time ))
+        fire_and_forget(update_block_conf_stats("duration_s_publish_blocks", (time.time() - start_time )))
     
-    update_block_conf_stats("end_time_utc_publish", datetime.utcnow())  
+    fire_and_forget(update_block_conf_stats("end_time_utc_publish", datetime.utcnow())  )
     return
 
-def get_conf_status(args, blocks):
+async def get_conf_status(args, blocks):
     start_time_tot = time.time()
     unconfirmed_count = len(blocks)
     unconfirmed_blocks = blocks[:]
@@ -406,16 +415,16 @@ def get_conf_status(args, blocks):
             block_info = api.get_block_info(block["hash"])
             try: 
                 if block_info["confirmed"] == "true" :
-                    insert_block_command(block["hash"],block["subtype"],'rpc_block_info_confirmed', 'publish' )
-                    inc_block_conf_stats("rpc_block_info_confirmed")
+                    await insert_block_command(block["hash"],block["subtype"],'rpc_block_info_confirmed', 'publish' )
+                    await inc_block_conf_stats("rpc_block_info_confirmed")
                 else :
                     unconfirmed_blocks.append(block)
             except Exception as ex:                
                 missing_in_ledger.append(block["hash"]) #can only happen if we broadcast it to peers via script. RPC process call adds to own ledger automatically 
                 unconfirmed_blocks.append(block)
 
-        update_block_conf_stats("duration_s_rpc_block_info", (time.time() - start_time )) 
-        inc_block_conf_stats("iter_count_rpc_block_info", 1)
+        await update_block_conf_stats("duration_s_rpc_block_info", (time.time() - start_time )) 
+        await inc_block_conf_stats("iter_count_rpc_block_info", 1)
         confirmed_in_iteration = unconfirmed_count - len(unconfirmed_blocks)
         unconfirmed_count = len(unconfirmed_blocks)
         if unconfirmed_count == 0 : 
@@ -424,8 +433,8 @@ def get_conf_status(args, blocks):
         print("{} blocks unconfirmed. {} confirmed in iteration. missing in ledger : {}. Sleeping for {} seconds {}".format(
                 unconfirmed_count,    confirmed_in_iteration,    len(missing_in_ledger),  sleep_per_iteration, ("." * itercount)), end="\r")
         time.sleep(sleep_per_iteration) 
-    update_block_conf_stats("conf_duration_after_publish", time.time() - start_time_tot )
-    update_block_conf_stats("end_time_utc_conf_rpc", datetime.utcnow())
+    await update_block_conf_stats("conf_duration_after_publish", time.time() - start_time_tot )
+    await update_block_conf_stats("end_time_utc_conf_rpc", datetime.utcnow())
     return       
 
 def check_for_late_websocket_messages():    
@@ -437,7 +446,7 @@ def check_for_late_websocket_messages():
     while sleep :
         itercount = itercount + 1
         sleep = False
-        msg = ""
+        msg = ""       
         q = "SELECT prop_value FROM block_conf_stats WHERE session_id = '{}' AND prop_key = 'publish'".format(session_id)
         publish = int(cur.execute(q).fetchone()[0])        
         q = "SELECT prop_value FROM block_conf_stats WHERE session_id = '{}' AND prop_key = 'ws_new_unconfirmed_block'".format(session_id)
@@ -448,7 +457,7 @@ def check_for_late_websocket_messages():
         if ws_new_unconfirmed_block < publish :
             sleep = sleep + True 
             msg = msg + "{}/{} ws_new_unconfirmed_block.".format(ws_new_unconfirmed_block, publish)
-                       
+                    
             
         
         if ws_confirmation < publish:
@@ -457,14 +466,16 @@ def check_for_late_websocket_messages():
         
         if sleep_per_iteration * itercount >= sleep_before_quit :
             print("FAILED : Waiting for later confirmtions timed out after {} minutes".format(sleep_before_quit / 60))
-            update_block_conf_stats("late_ws_new_unconfirmed_block", publish - ws_new_unconfirmed_block )
-            update_block_conf_stats("late_ws_confirmation", publish - ws_confirmation )
-            update_block_conf_stats("late_websocket_messages_timeout", "true" ) 
+            fire_and_forget(update_block_conf_stats("late_ws_new_unconfirmed_block", publish - ws_new_unconfirmed_block ))
+            fire_and_forget(update_block_conf_stats("late_ws_confirmation", publish - ws_confirmation ))
+            fire_and_forget(update_block_conf_stats("late_websocket_messages_timeout", "true" ) )
             sleep = False
 
         if sleep :
             print(msg + " Sleeping for {} seconds {}".format(sleep_per_iteration, ("." * itercount)), end= "\r") 
             time.sleep(sleep_per_iteration) 
+        
+
     return
                 
 
@@ -480,7 +491,7 @@ def create_db(db_is_new):
 
 
 
-def main():
+async def main():
     global api, session_id, ws, conn
     
 
@@ -530,15 +541,15 @@ def main():
     conn = sqlite3.connect(db_filename, check_same_thread=False, isolation_level=None)
     create_db(db_is_new)  
     is_new_session()
-    update_block_conf_stats("estimated_session_block_count", args.tx_per_acc * args.accs * args.block_type )
-    update_block_conf_stats("tps", args.tps /args.tx_wait  )
+    fire_and_forget(update_block_conf_stats("estimated_session_block_count", args.tx_per_acc * args.accs * args.block_type ))
+    fire_and_forget(update_block_conf_stats("tps", args.tps /args.tx_wait  ))
 
     blocks = create_blocks(args)
 
     start_time = time.time()
     publish_blocks(args, blocks)
-    get_conf_status(args, blocks)
-    update_block_conf_stats("pub_and_conf_duration_total", time.time() - start_time)
+    await get_conf_status(args, blocks)
+    fire_and_forget(update_block_conf_stats("pub_and_conf_duration_total", time.time() - start_time))
     ws.calc_network_load(time.time() - start_time)  
     check_for_late_websocket_messages()     
     
@@ -546,10 +557,16 @@ def main():
 
 
 
-if __name__ == '__main__':    
-    
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
+    # _loop = asyncio.get_event_loop()    
+    # threading.Thread(target=_loop.run_forever, daemon=True).start()
+    # # loop = asyncio.get_event_loop()
+    # _loop.run_until_complete(main())
+    time.sleep(5)
 
-    main()
+    
 
 
 
